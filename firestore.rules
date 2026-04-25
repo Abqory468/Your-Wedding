@@ -1,0 +1,93 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() { return request.auth != null; }
+    function isOwner(ownerId) { return isSignedIn() && request.auth.uid == ownerId; }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+
+    function isValidUserProfile(data) {
+      return data.uid == request.auth.uid 
+        && data.email is string && data.email.size() <= 256
+        && (!('displayName' in data) || (data.displayName is string && data.displayName.size() <= 128))
+        && (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() <= 1024));
+    }
+
+    function isValidInvitation(data) {
+      return data.ownerId == request.auth.uid
+        && data.coupleNames is string && data.coupleNames.size() <= 200
+        && data.location is string && data.location.size() <= 500
+        && data.slug is string && data.slug.size() <= 100 && data.slug.matches('^[a-z0-9-]+$')
+        && data.date is int
+        && data.design is map
+        && data.design.themeColor is string && data.design.themeColor.size() <= 20
+        && data.design.accentColor is string && data.design.accentColor.size() <= 20
+        && data.design.fontFamily in ['serif', 'sans']
+        && (!('venueName' in data) || (data.venueName is string && data.venueName.size() <= 200))
+        && (!('description' in data) || (data.description is string && data.description.size() <= 2000))
+        && data.createdAt is int
+        && data.updatedAt is int;
+    }
+
+    function isValidGuest(data) {
+      return data.name is string && data.name.size() <= 100
+        && data.status in ['pending', 'attending', 'declined']
+        && data.plusOnes is int && data.plusOnes >= 0 && data.plusOnes <= 10
+        && (!('email' in data) || (data.email is string && data.email.size() <= 256))
+        && (!('phone' in data) || (data.phone is string && data.phone.size() <= 50))
+        && (!('dietaryRequirements' in data) || (data.dietaryRequirements is string && data.dietaryRequirements.size() <= 500))
+        && (!('message' in data) || (data.message is string && data.message.size() <= 1000))
+        && data.invitedAt is int;
+    }
+
+    // --- Collections ---
+
+    match /users/{userId} {
+      allow get: if isSignedIn() && (request.auth.uid == userId);
+      allow create: if isSignedIn() && request.auth.uid == userId && isValidUserProfile(incoming());
+      allow update: if isSignedIn() && request.auth.uid == userId && isValidUserProfile(incoming())
+        && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'photoURL']);
+    }
+
+    match /invitations/{invitationId} {
+      allow get: if isValidId(invitationId);
+      allow list: if isOwner(resource.data.ownerId);
+      
+      allow create: if isSignedIn() && isValidId(invitationId) && isValidInvitation(incoming())
+        && incoming().createdAt == request.time.toMillis()
+        && incoming().updatedAt == request.time.toMillis()
+        && existsAfter(/databases/$(database)/documents/slugs/$(incoming().slug));
+      
+      allow update: if isOwner(existing().ownerId) && isValidInvitation(incoming())
+        && incoming().ownerId == existing().ownerId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time.toMillis()
+        && (incoming().slug == existing().slug || existsAfter(/databases/$(database)/documents/slugs/$(incoming().slug)));
+      
+      allow delete: if isOwner(existing().ownerId);
+
+      match /guests/{guestId} {
+        allow list, get: if isOwner(get(/databases/$(database)/documents/invitations/$(invitationId)).data.ownerId);
+        
+        allow create: if isOwner(get(/databases/$(database)/documents/invitations/$(invitationId)).data.ownerId) && isValidGuest(incoming());
+        allow update: if (isOwner(get(/databases/$(database)/documents/invitations/$(invitationId)).data.ownerId) || (isValidGuest(incoming()) && incoming().diff(existing()).affectedKeys().hasAny(['status', 'plusOnes', 'dietaryRequirements', 'message'])))
+          && (isOwner(get(/databases/$(database)/documents/invitations/$(invitationId)).data.ownerId) || (incoming().name == existing().name && incoming().invitedAt == existing().invitedAt));
+        allow delete: if isOwner(get(/databases/$(database)/documents/invitations/$(invitationId)).data.ownerId);
+      }
+    }
+
+    match /slugs/{slug} {
+      allow get: if true;
+      allow create: if isSignedIn() && isValidId(incoming().invitationId)
+        && getAfter(/databases/$(database)/documents/invitations/$(incoming().invitationId)).data.ownerId == request.auth.uid;
+      allow delete: if isSignedIn() && get(/databases/$(database)/documents/invitations/$(existing().invitationId)).data.ownerId == request.auth.uid;
+    }
+  }
+}

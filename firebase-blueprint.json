@@ -1,0 +1,81 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Information about the application user",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" }
+      },
+      "required": ["uid", "email"]
+    },
+    "DesignConfig": {
+      "title": "Design Configuration",
+      "description": "Visual settings for the invitation",
+      "type": "object",
+      "properties": {
+        "themeColor": { "type": "string" },
+        "accentColor": { "type": "string" },
+        "fontFamily": { "type": "string", "enum": ["serif", "sans"] },
+        "backgroundImage": { "type": "string" },
+        "ornamentStyle": { "type": "string", "enum": ["floral", "minimal", "classic"] }
+      },
+      "required": ["themeColor", "accentColor", "fontFamily"]
+    },
+    "Invitation": {
+      "title": "Invitation",
+      "description": "The wedding invitation details",
+      "type": "object",
+      "properties": {
+        "ownerId": { "type": "string" },
+        "coupleNames": { "type": "string" },
+        "date": { "type": "integer" },
+        "location": { "type": "string" },
+        "venueName": { "type": "string" },
+        "description": { "type": "string" },
+        "design": { "$ref": "#/entities/DesignConfig" },
+        "slug": { "type": "string" },
+        "createdAt": { "type": "integer" },
+        "updatedAt": { "type": "integer" }
+      },
+      "required": ["ownerId", "coupleNames", "date", "location", "slug"]
+    },
+    "Guest": {
+      "title": "Guest",
+      "description": "A guest invited to the wedding",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "attending", "declined"] },
+        "plusOnes": { "type": "integer" },
+        "dietaryRequirements": { "type": "string" },
+        "message": { "type": "string" },
+        "invitedAt": { "type": "integer" }
+      },
+      "required": ["name", "status"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profiles"
+    },
+    "invitations/{invitationId}": {
+      "schema": "Invitation",
+      "description": "Main invitations"
+    },
+    "invitations/{invitationId}/guests/{guestId}": {
+      "schema": "Guest",
+      "description": "Guest list for a specific invitation"
+    },
+    "slugs/{slug}": {
+      "schema": { "type": "object", "properties": { "invitationId": { "type": "string" } } },
+      "description": "Mapping from slugs to invitation IDs"
+    }
+  }
+}
